@@ -3,9 +3,9 @@ from .machine import Machine
 import re
 
 _re_asmdef = re.compile(r'^\s*(.+?)\s*=\s*(.+?)\s*$')
-_re_sh4 = re.compile(r"^([A-Z][A-Z0-9_]*?)\s+([^,]+?)\s*,\s*('.*?'|[^,]+?)\s*,\s*('.*?'|[^,]+?)$")
-_re_sh3 = re.compile(r"^([A-Z][A-Z0-9_]*?)\s+('.*?'|[^,]+?)\s*,\s*('.*?'|[^,]+?)$")
-_re_sh2 = re.compile(r"^([A-Z][A-Z0-9_]*?)\s+('.*?'|[^,]+?)$")
+_re_sh4 = re.compile(r"^\s*([A-Z][A-Z0-9_]*?)\s+([^,]+?)\s*,\s*('.*?'|[^,]+?)\s*,\s*('.*?'|[^,]+?)\s*$")
+_re_sh3 = re.compile(r"^\s*([A-Z][A-Z0-9_]*?)\s+('.*?'|[^,]+?)\s*,\s*('.*?'|[^,]+?)\s*$")
+_re_sh2 = re.compile(r"^\s*([A-Z][A-Z0-9_]*?)\s+('.*?'|[^,]+?)\s*$")
 
 def _load_asm_config(path: str) -> dict[str, int]:
     s2code = {}
@@ -89,7 +89,7 @@ class ASM:
             ins = m.group(1)
             z = m.group(2)
             x = try_eval(m.group(3))
-            if ins in ['ADD', 'AND', 'OR', 'XOR']:
+            if ins in ['ADD', 'SUB', 'AND', 'OR', 'XOR']:
                 return [f'{ins} {z}, {z}, {x}']
             if ins == 'NEG':
                 return [f'SUB {z}, #0, {x}']
@@ -105,6 +105,10 @@ class ASM:
                 ]
             if ins in ['JE', 'JNE']:
                 return [f'{ins} {z}, {x}, #0']
+            if ins == 'STR':
+                return [f'STR #8, {z}, {x}']
+            if ins == 'LDR':
+                return [f'LDR {z}, {x}, #0']
         m = _re_sh2.match(sh)
         if m:
             ins = m.group(1)
@@ -119,7 +123,19 @@ class ASM:
                 return [f'NOT {z}, {z}, 0']
             if ins == 'JMP':
                 return [f'JE {z}, #0, #0']
-        return [sh]
+            if ins == 'PUSH':
+                return [f'PUSH #8, {z}, #0']
+            if ins == 'POP':
+                return [f'POP {z}, #0, #0']
+            if ins == 'CALL':
+                return [
+                    'PUSH #8, $+8, #0', # PUSH $+8
+                    f'JE {z}, #0, #0', # JMP {z}
+                ]
+        ins = sh.strip()
+        if ins == 'RET':
+            return ['POP PC, #0, #0'] # POP PC
+        return [ins]
 
     def encode(self, sh: str) -> tuple[int, int, int, int]:
         def get_code(s: str):
@@ -129,7 +145,7 @@ class ASM:
                 s = s[1:]
             if s.startswith("'"):
                 return ord(s[1:-1])
-            return int(s, 0)
+            return int(eval(s))
         def is_imm(s: str):
             return s.startswith('#') or s.startswith("'")
 
@@ -156,8 +172,6 @@ class ASM:
 
 def run_terminal(asm: ASM):
     re_in = re.compile(r'^in\s+(.+?)$')
-
-    print('ASM terminal. Type exit to quit.')
     print(asm)
     while True:
         try:
@@ -181,4 +195,4 @@ def run_terminal(asm: ASM):
         print(asm)
 
 if __name__ == '__main__':
-    run_terminal(ASM('leg/asm_config'))
+    run_terminal(ASM('leg/asm.config'))

@@ -1,11 +1,12 @@
 import re
 
 _re_labeldef = re.compile(r'^label\s+([A-Za-z_]\w*)\s*:$')
-_re_jxx = re.compile(r'^(J[A-Z]*)\s+(.+?)\s*((?:,\s*.+?\s*)*)$')
+_re_constdef = re.compile(r'^const\s+([A-Za-z_]\w*)\s*=(.+)$')
+_re_jxx = re.compile(r'^(J[A-Z]+)\s+(.+?)\s*((?:,\s*.+?\s*)*)$')
 
-from .asm import ASM, _re_asmdef
+from .asm import ASM, _re_asmdef, _re_sh4, _re_sh3, _re_sh2
 
-_asm_config = 'leg/asm_config'
+_asm_config = 'leg/asm.config'
 _asm = ASM(_asm_config)
 
 def compile(path: str):
@@ -20,6 +21,7 @@ def compile(path: str):
             lines.append(sh)
 
     labels = {}
+    consts = {}
     pc = 0
     for line in lines:
         m = _re_labeldef.match(line)
@@ -29,6 +31,12 @@ def compile(path: str):
                 raise ValueError(f'Duplicate label: {name}')
             labels[name] = pc
             continue
+        m = _re_constdef.match(line)
+        if m:
+            key = m.group(1)
+            val = int(m.group(2), 0)
+            consts[key] = val
+            continue
         pc += 4
 
     raw_lines = lines
@@ -37,7 +45,40 @@ def compile(path: str):
     for line in raw_lines:
         if _re_labeldef.match(line):
             continue
-        # repalce label
+        if _re_constdef.match(line):
+            continue
+        # replace const
+        m = _re_sh4.match(line)
+        if m:
+            ins = m.group(1)
+            z = m.group(2)
+            x = m.group(3)
+            y = m.group(4)
+            if z in consts:
+                z = f'#{consts[z]}'
+            if x in consts:
+                x = f'#{consts[x]}'
+            if y in consts:
+                y = f'#{consts[y]}'
+            line = f'{ins} {z}, {x}, {y}'
+        m = _re_sh3.match(line)
+        if m:
+            ins = m.group(1)
+            z = m.group(2)
+            x = m.group(3)
+            if z in consts:
+                z = f'#{consts[z]}'
+            if x in consts:
+                x = f'#{consts[x]}'
+            line = f'{ins} {z}, {x}'
+        m = _re_sh2.match(line)
+        if m:
+            ins = m.group(1)
+            z = m.group(2)
+            if z in consts:
+                z = f'#{consts[z]}'
+            line = f'{ins} {z}'
+        # replace label
         m = _re_jxx.match(line)
         if m:
             label = m.group(2)
@@ -47,6 +88,9 @@ def compile(path: str):
                 label = label.replace('$', str(pc))
                 label = eval(label)
             line = f'{m.group(1)} {label} {m.group(3)}'
+        # replace $
+        elif '$' in line:
+            line = line.replace('$', f'#{pc}') 
         shs = _asm.macro(line)
         if len(shs) != 1:
             raise RuntimeError(f"sdk.cl(): bad macro from \"{line}\" to \"{shs}\"")
@@ -74,7 +118,7 @@ def _load_asm_config(path: str) -> dict[int, str]:
         ins = m.group(1)
         code = int(m.group(2), 0)
         if code not in code2s:
-            code2s[code] = [ins]
+            code2s[code] = ins
     return code2s
 
 _code2s = _load_asm_config(_asm_config)
@@ -82,7 +126,7 @@ _code2s = _load_asm_config(_asm_config)
 def decompile(sh: tuple[int, int, int, int]) -> str:
     def geti(code: int) -> str:
         if code in _code2s:
-            return _code2s[code][0]
+            return _code2s[code]
         return str(code)
     def geta(addr: int, io: str) -> str:
         if addr < 6:
@@ -99,11 +143,6 @@ def decompile(sh: tuple[int, int, int, int]) -> str:
     ins = geti(raw_ins & 0x3f)
     z = str(z) if ins.startswith('J') else geta(z, 'RO')
 
-    if ins in ['ADD', 'SUB', 'AND', 'OR', 'XOR']:
-        if z == x:
-            return f'{ins} {z}, {y}'
-        if ins != 'SUB' and z == y:
-            return f'{ins} {z}, {x}'
     if ins == 'ADD':
         if y == '#0':
             return f'MOV {z}, {x}'
@@ -112,6 +151,11 @@ def decompile(sh: tuple[int, int, int, int]) -> str:
     elif ins == 'SUB':
         if x == z and y == '#1':
             return f'DEC {z}'
+    if ins in ['ADD', 'SUB', 'AND', 'OR', 'XOR']:
+        if z == x:
+            return f'{ins} {z}, {y}'
+        if ins != 'SUB' and z == y:
+            return f'{ins} {z}, {x}'
     elif ins.startswith('J'):
         if raw_ins & 0x80 and raw_ins & 0x40:
             x = int(x[1:], 0)
@@ -134,6 +178,10 @@ def decompile(sh: tuple[int, int, int, int]) -> str:
                 return f'{ins} {z}, {y}'
             if y == '#0':
                 return f'{ins} {z}, {x}'
+    elif ins == 'PUSH':
+        return f'PUSH {x}'
+    elif ins == 'POP':
+        return f'POP {z}'
 
     return f'{ins} {z}, {x}, {y}'
 

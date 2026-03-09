@@ -26,6 +26,32 @@ class BU:
     def __call__(self, ins: int, a: int, b: int) -> bool:
         return self._i2f[ins & 0b111](a, b)
 
+class RAM:
+    def __init__(self):
+        self._ram = [0 for _ in range(256)]
+
+    def __call__(self, ins: int, addr: int, value = None) -> int | None:
+        addr &= 0xff
+        if ins & 1 == 0:
+            return self._ram[addr]
+        else:
+            self._ram[addr] = value & 0xff
+
+class STK:
+    def __init__(self):
+        self._stk = []
+
+    def reboot(self):
+        self._stk.clear()
+
+    def __call__(self, ins: int, value: int = None) -> int | None:
+        if ins & 1 == 0: # POP
+            if len(self._stk) == 0:
+                raise RuntimeError('STK.__call__(): pop empty stack')
+            return self._stk.pop()
+        else: # PUSH
+            self._stk.append(value & 0xff)
+
 class Machine:
     def __init__(self):
         self._r = [0 for _ in range(6)]
@@ -33,8 +59,11 @@ class Machine:
         self._fi = True
         self._ri = None
         self._ro = None
+
         self._alu = ALU()
         self._bu = BU()
+        self._ram = RAM()
+        self._stk = STK()
 
     def reboot(self):
         for i in range(6):
@@ -44,11 +73,13 @@ class Machine:
         self._ri = None
         self._ro = None
 
+        self._stk.reboot()
+
     def __str__(self) -> str:
         return " ".join([
             *[f'R{i}={self._r[i]}' for i in range(6)],
+            f'PC={self._pc}',
             f"RO={'Z' if self._ro is None else self._ro}",
-            f'PC={self._pc}'
         ])
 
     # region property
@@ -79,6 +110,7 @@ class Machine:
     @ri.setter
     def ri(self, value: int | None):
         self._ri = value & 0xff if isinstance(value, int) else None
+        self._fi = False
     @property
     def fi(self) -> bool:
         return self._fi
@@ -118,6 +150,18 @@ class Machine:
         elif ((ins >> 3) & 0b111) == 0b100:
             if self._bu(ins, a, b):
                 self._pc = addr2
+        elif ((ins >> 2) & 0b1111) == 0b0100: # RAM
+            if ins & 0b10 == 0: # RAM
+                if ins & 1 == 0: # LDR
+                    v = self._ram(ins, a)
+                    self._setv(addr2, v)
+                else: # STR
+                    self._ram(ins, a, b)
+            else: # STK
+                if ins & 1 == 0: # POP
+                    v = self._stk(ins)
+                    self._setv(addr2, v)
+                else: # PUSH
+                    self._stk(ins, a)
         else:
             raise ValueError(f'Machine.step(): bad instruction {ins}')
-        
