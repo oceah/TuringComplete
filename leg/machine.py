@@ -1,16 +1,19 @@
 class ALU:
     def __init__(self):
         self._i2f = {
-            0b000: lambda a, b: (a + b) & 0xff,
-            0b001: lambda a, b: (a - b) & 0xff,
-            0b010: lambda a, b: a & b,
-            0b011: lambda a, b: a | b,
-            0b100: lambda a, _: ~a & 0xff,
-            0b101: lambda a, b: a ^ b,
+            0b0000: lambda a, b: (a + b) & 0xff,
+            0b0001: lambda a, b: (a - b) & 0xff,
+            0b0010: lambda a, b: a & b,
+            0b0011: lambda a, b: a | b,
+            0b0100: lambda a, _: ~a & 0xff,
+            0b0101: lambda a, b: a ^ b,
+
+            0b1000: lambda a, b: (a << b) & 0xff, # SHL
+            0b1001: lambda a, b: a >> b, # SHR
         }
 
     def __call__(self, ins: int, a: int, b: int) -> int:
-        return self._i2f[ins & 0b111](a, b)
+        return self._i2f[ins & 0b1111](a, b)
 
 class BU:
     def __init__(self):
@@ -41,7 +44,7 @@ class STK:
     def __init__(self):
         self._stk = []
 
-    def reboot(self):
+    def reset(self):
         self._stk.clear()
 
     def __call__(self, ins: int, value: int = None) -> int | None:
@@ -65,7 +68,7 @@ class Machine:
         self._ram = RAM()
         self._stk = STK()
 
-    def reboot(self):
+    def reset(self):
         for i in range(6):
             self._r[i] = 0
         self._pc = 0
@@ -73,10 +76,10 @@ class Machine:
         self._ri = None
         self._ro = None
 
-        self._stk.reboot()
+        self._stk.reset()
 
     def __str__(self) -> str:
-        return " ".join([
+        return ' '.join([
             *[f'R{i}={self._r[i]}' for i in range(6)],
             f'PC={self._pc}',
             f"RO={'Z' if self._ro is None else self._ro}",
@@ -144,7 +147,7 @@ class Machine:
         self._ro = None
         a = addr0 if ins & 0x80 else self._getv(addr0)
         b = addr1 if ins & 0x40 else self._getv(addr1)
-        if ((ins >> 3) & 0b111) == 0b000:
+        if ((ins >> 4) & 0b11) == 0b00:
             c = self._alu(ins, a, b)
             self._setv(addr2, c)
         elif ((ins >> 3) & 0b111) == 0b100:

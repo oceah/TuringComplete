@@ -26,7 +26,7 @@ class ASM:
         self._s2code = _load_asm_config(asm_config)
 
     def reset(self):
-        self._machine.reboot()
+        self._machine.reset()
 
     def __str__(self) -> str:
         return str(self._machine)
@@ -89,7 +89,7 @@ class ASM:
             ins = m.group(1)
             z = m.group(2)
             x = try_eval(m.group(3))
-            if ins in ['ADD', 'SUB', 'AND', 'OR', 'XOR']:
+            if ins in ['ADD', 'SUB', 'AND', 'OR', 'XOR', 'SHL', 'SHR']:
                 return [f'{ins} {z}, {z}, {x}']
             if ins == 'NEG':
                 return [f'SUB {z}, #0, {x}']

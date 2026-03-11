@@ -4,7 +4,7 @@ _re_labeldef = re.compile(r'^label\s+([A-Za-z_]\w*)\s*:$')
 _re_constdef = re.compile(r'^const\s+([A-Za-z_]\w*)\s*=(.+)$')
 _re_jxx = re.compile(r'^(J[A-Z]+)\s+(.+?)\s*((?:,\s*.+?\s*)*)$')
 
-from .asm import ASM, _re_asmdef, _re_sh4, _re_sh3, _re_sh2
+from .asm import ASM, _re_asmdef
 
 _asm_config = 'leg/asm.config'
 _asm = ASM(_asm_config)
@@ -21,7 +21,6 @@ def compile(path: str):
             lines.append(sh)
 
     labels = {}
-    consts = {}
     pc = 0
     for line in lines:
         m = _re_labeldef.match(line)
@@ -35,7 +34,9 @@ def compile(path: str):
         if m:
             key = m.group(1)
             val = int(m.group(2), 0)
-            consts[key] = val
+            if key in labels:
+                raise ValueError(f'Duplicate label: {key}')
+            labels[key] = val
             continue
         pc += 4
 
@@ -47,48 +48,25 @@ def compile(path: str):
             continue
         if _re_constdef.match(line):
             continue
-        # replace const
-        m = _re_sh4.match(line)
-        if m:
-            ins = m.group(1)
-            z = m.group(2)
-            x = m.group(3)
-            y = m.group(4)
-            if z in consts:
-                z = f'#{consts[z]}'
-            if x in consts:
-                x = f'#{consts[x]}'
-            if y in consts:
-                y = f'#{consts[y]}'
-            line = f'{ins} {z}, {x}, {y}'
-        m = _re_sh3.match(line)
-        if m:
-            ins = m.group(1)
-            z = m.group(2)
-            x = m.group(3)
-            if z in consts:
-                z = f'#{consts[z]}'
-            if x in consts:
-                x = f'#{consts[x]}'
-            line = f'{ins} {z}, {x}'
-        m = _re_sh2.match(line)
-        if m:
-            ins = m.group(1)
-            z = m.group(2)
-            if z in consts:
-                z = f'#{consts[z]}'
-            line = f'{ins} {z}'
         # replace label
+        sep = r'[+-,\s]?'
+        p = rf'({sep})([A-Za-z_]\w*)({sep})'
+        def repl(m: re.Match):
+            left = m.group(1)
+            label = m.group(2)
+            right = m.group(3)
+            if label in labels:
+                return f"{left}{labels[label]}{right}"
+            return m.group(0)
+        line = re.sub(p, repl, line)
+        # replace $
         m = _re_jxx.match(line)
         if m:
             label = m.group(2)
-            if label in labels:
-                label = labels[label]
-            elif label.startswith('$'):
+            if label.startswith('$'):
                 label = label.replace('$', str(pc))
                 label = eval(label)
             line = f'{m.group(1)} {label} {m.group(3)}'
-        # replace $
         elif '$' in line:
             line = line.replace('$', f'#{pc}') 
         shs = _asm.macro(line)
@@ -185,7 +163,12 @@ def decompile(sh: tuple[int, int, int, int]) -> str:
 
     return f'{ins} {z}, {x}, {y}'
 
-def run(path: str, input: list[int] = [], encoding: str = 'd', log: bool = False):
+def run(path: str, input: list[int] | str = [], encoding: str = 'd', log: bool = False):
+    if isinstance(input, str):
+        _input = []
+        for c in input:
+            _input.append(ord(c))
+        input = _input
     with open(path, encoding='utf-8') as f:
         lines = f.readlines()
     program = []
@@ -197,7 +180,7 @@ def run(path: str, input: list[int] = [], encoding: str = 'd', log: bool = False
         program.append((ins, addr0, addr1, addr2))
     _asm.reset()
     i = 0
-    pout = []
+    pout = '' if encoding == 'utf-8' else []
     while _asm.pc // 4 < len(program):
         if _asm.fi and i < len(input):
             _asm.ri = input[i]
@@ -215,7 +198,8 @@ def run(path: str, input: list[int] = [], encoding: str = 'd', log: bool = False
             elif encoding == 'b':
                 pout.append(f'0b{format(out, '08b')}')
             elif encoding == 'utf-8':
-                pout.append(chr(out))
+                pout += chr(out)
     if pout:
-        sep = '' if encoding == 'utf-8' else ' '
-        print(sep.join(pout))
+        if encoding != 'utf-8':
+            pout = ' '.join(pout)
+        print(pout)

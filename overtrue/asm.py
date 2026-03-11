@@ -31,7 +31,7 @@ class ASM:
         self._retx = 0
 
     def reset(self):
-        self._machine.reboot()
+        self._machine.reset()
         self._retx = 0
 
     def __str__(self) -> str:

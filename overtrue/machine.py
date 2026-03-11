@@ -34,7 +34,7 @@ class STK:
     def __init__(self):
         self._stk = []
 
-    def reboot(self):
+    def reset(self):
         self._stk.clear()
 
     def __call__(self, ins: int, value: int = None) -> int | None:
@@ -57,7 +57,7 @@ class Machine:
         self._bu = BU()
         self._stk = STK()
 
-    def reboot(self):
+    def reset(self):
         for i in range(6):
             self._r[i] = 0
         self._pc = 0
@@ -65,7 +65,7 @@ class Machine:
         self._ri = None
         self._ro = None
 
-        self._stk.reboot()
+        self._stk.reset()
 
     def __str__(self) -> str:
         return " ".join([
